@@ -83,36 +83,65 @@ async function steam(url, retries = 3) {
     throw lastError;
 }
 
+// Fetch Text with Retries
+
+async function fetchText(url, retries = 3) {
+    let lastError;
+    console.log(`→ Fetching text from ${url}...`);
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            console.log(`  Attempt ${attempt}/${retries}`);
+            const res = await fetch(url, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                }
+            });
+
+            if (!res.ok) {
+                const text = await res.text();
+                console.error(`  ✗ Request returned ${res.status}: ${text.substring(0, 200)}`);
+                throw new Error(`HTTP ${res.status}`);
+            }
+
+            const text = await res.text();
+            console.log(`  ✓ Received ${text.length} bytes`);
+            return text;
+
+        } catch (err) {
+            lastError = err;
+            log(`Request failed (${attempt}/${retries})`);
+            console.error(`  ⚠ Error: ${err.message}`);
+            if (attempt !== retries) {
+                console.log(`  Waiting 1.5s before retry...`);
+                await delay(1500);
+            }
+        }
+    }
+
+    console.error('✗ All retries exhausted.');
+    throw lastError;
+}
+
 // Account Age
 
 async function getProfileAge() {
     console.log("→ Fetching profile age from Steam community...");
     try {
-        const response = await fetch(
+        const xml = await fetchText(
             `https://steamcommunity.com/profiles/${STEAM_ID}/?xml=1`
         );
 
-        if (!response.ok) {
-            console.warn(`⚠ Profile XML request failed with status ${response.status}`);
-            return "Unknown";
-        }
-
-        const xml = await response.text();
-        console.log("  XML response received, parsing memberSince...");
-
-        const match = xml.match(
-            /<memberSince>(.*?)<\/memberSince>/
-        );
-
+        const match = xml.match(/<memberSince>\s*(.*?)\s*<\/memberSince>/);
         if (!match) {
             console.warn("⚠ Could not find memberSince tag in XML");
             return "Unknown";
         }
 
-        const created = new Date(match[1]);
-
-        if (isNaN(created)) {
-            console.warn(`⚠ Invalid creation date parsed: ${match[1]}`);
+        const dateStr = match[1].trim();
+        const created = new Date(dateStr);
+        if (isNaN(created.getTime())) {
+            console.warn(`⚠ Invalid creation date parsed: ${dateStr}`);
             return "Unknown";
         }
 
